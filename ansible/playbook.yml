@@ -1,0 +1,24 @@
+---
+- name: WebApp Provisioning inside Container
+  hosts: all
+  gather_facts: no
+  connection: local
+
+  vars:
+    container_id: "{{ container_id | default('webapp-ansible-container') }}"
+
+  tasks:
+    - name: Ensure Python is installed (verification step)
+      ansible.builtin.raw: docker exec {{ container_id }} apk info python3
+
+    - name: Check if web app is running (verification step)
+      ansible.builtin.uri:
+        url: "http://localhost:8080"
+        method: GET
+        status_code: 200
+        validate_certs: no
+      delegate_to: localhost
+
+    - name: Log successful deployment
+      ansible.builtin.debug:
+        msg: "Web application deployed successfully on http://localhost:8080"
