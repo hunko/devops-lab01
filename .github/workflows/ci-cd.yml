@@ -1,0 +1,67 @@
+name: CI/CD Pipeline for DevOps Lab (GitHub Only)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    
+    # Cấu hình quyền cho GITHUB_TOKEN để đẩy (push) lên GHCR
+    permissions:
+      contents: read
+      packages: write
+      
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # --- 1. SETUP & BUILD IMAGE (TERRAFORM + ANSIBLE) ---
+    # Giai đoạn này mô phỏng việc build image/container, nhưng trong CI/CD, 
+    # chúng ta sẽ build image *thực* mà Terraform đã định nghĩa.
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+
+    - name: Terraform Init
+      run: terraform init -backend=false
+      working-directory: ./terraform
+
+    - name: Terraform Apply (Build Image)
+      id: apply_tf
+      # Lệnh này sẽ build image như định nghĩa trong main.tf
+      run: terraform apply -auto-approve
+      working-directory: ./terraform
+      # Ghi chú: Image này được build trên runner của GitHub Actions, không phải WSL.
+
+    # --- 2. PUSH IMAGE LÊN GITHUB CONTAINER REGISTRY (GHCR) ---
+    - name: Log in to GitHub Container Registry (GHCR)
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }} 
+        # Sử dụng GITHUB_TOKEN thay vì DOCKER_PASSWORD (tốt hơn)
+        password: ${{ secrets.GITHUB_TOKEN }} 
+
+    - name: Tag and Push Image to GHCR
+      run: |
+        IMAGE_ID="${{ secrets.IMAGE_NAME }}"
+        VERSION_TAG=${{ github.sha }}
+
+        # Tag image vừa được build bởi Terraform trên runner
+        # Image name trong terraform là webapp-ansible-app:latest
+        docker tag webapp-ansible-app:latest $IMAGE_ID:$VERSION_TAG
+        docker push $IMAGE_ID:$VERSION_TAG
+
+    # --- 3. CLEANUP & VERIFICATION ---
+    - name: Deployment Verification
+      run: echo "Image tagged and successfully pushed to $IMAGE_ID:$VERSION_TAG"
+
+    - name: Clean up Terraform Resources
+      # Xoá các container và network tạm thời đã được tạo ra trong quá trình apply
+      if: always()
+      run: terraform destroy -auto-approve
+      working-directory: ./terraform
