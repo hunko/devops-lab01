@@ -11,6 +11,11 @@
     - name: Ensure Python is installed (verification step)
       ansible.builtin.raw: docker exec {{ container_id }} apk info python3
 
+    - name: Render Dockerfile template
+      ansible.builtin.template:
+      src: Dockerfile.j2
+      dest: Dockerfile
+
     - name: Check if web app is running (verification step)
       ansible.builtin.uri:
         url: "http://localhost:8080"
